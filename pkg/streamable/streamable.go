@@ -137,6 +137,16 @@ func Unmarshal(bytes []byte, v interface{}) error {
 				}
 				field.Set(sliceReflect)
 			}
+		case reflect.String:
+			// 4 byte size prefix, then []byte which can be converted to utf-8 string
+			// Get 4 byte length prefix
+			var length []byte
+			length, bytes, err = util.ShiftNBytes(4, bytes)
+			numBytes := binary.BigEndian.Uint32(length)
+
+			var strBytes []byte
+			strBytes, bytes, err = util.ShiftNBytes(uint(numBytes), bytes)
+			field.SetString(string(strBytes))
 		default:
 			return fmt.Errorf("unimplemented type %s", field.Kind())
 		}
@@ -217,6 +227,13 @@ func Marshal(v interface{}) ([]byte, error) {
 				// This is the easy case - already a slice of bytes
 				finalBytes = append(finalBytes, field.Bytes()...)
 			}
+		case reflect.String:
+			// Strings get converted to []byte with a 4 byte size prefix
+			strBytes := []byte(field.String())
+			numBytes := uint32(len(strBytes))
+			finalBytes = append(finalBytes, util.Uint32ToBytes(numBytes)...)
+
+			finalBytes = append(finalBytes, strBytes...)
 		default:
 			return nil, fmt.Errorf("unimplemented type %s", field.Kind())
 		}

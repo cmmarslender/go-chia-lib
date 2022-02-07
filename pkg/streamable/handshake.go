@@ -26,10 +26,10 @@ const (
 
 // Handshake is a handshake message
 type Handshake struct {
-	NetworkID       string
-	ProtocolVersion string
-	SoftwareVersion string
-	ServerPort      uint16
-	NodeType        NodeType
+	NetworkID       string   `streamable:""`
+	ProtocolVersion string   `streamable:""`
+	SoftwareVersion string   `streamable:""`
+	ServerPort      uint16   `streamable:""`
+	NodeType        NodeType `streamable:""`
 	// Capabilities List[Tuple[uint16, str]] // @TODO Support this
 }
