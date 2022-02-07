@@ -16,6 +16,7 @@ type ChiaConfig struct {
 	FullNode   FullNodeConfig  `yaml:"full_node"`
 	Harvester  HarvesterConfig `yaml:"harvester"`
 	Wallet     WalletConfig    `yaml:"wallet"`
+	Seeder     SeederConfig    `yaml:"seeder"`
 }
 
 // FarmerConfig farmer configuration section
@@ -38,6 +39,17 @@ type HarvesterConfig struct {
 
 // WalletConfig wallet configuration section
 type WalletConfig struct {
+	PortConfig `yaml:",inline"`
+	SSL        SSLConfig `yaml:"ssl"`
+}
+
+// SeederConfig seeder configuration section
+type SeederConfig struct {
+	CrawlerConfig CrawlerConfig `yaml:"crawler"`
+}
+
+// CrawlerConfig is the subsection of the seeder config specific to the crawler
+type CrawlerConfig struct {
 	PortConfig `yaml:",inline"`
 	SSL        SSLConfig `yaml:"ssl"`
 }
