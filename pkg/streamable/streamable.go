@@ -118,7 +118,6 @@ func Unmarshal(bytes []byte, v interface{}) error {
 			numItems := binary.BigEndian.Uint32(length)
 
 			sliceKind := field.Type().Elem().Kind()
-			log.Println("Its a slice, and its slice type is ", sliceKind)
 			switch sliceKind {
 			case reflect.Uint8: // same as byte
 				// In this case, numItems == numBytes, because its a uint8
@@ -132,10 +131,41 @@ func Unmarshal(bytes []byte, v interface{}) error {
 
 				sliceReflect := reflect.MakeSlice(field.Type(), 0, 0)
 				for _, newValBytes := range newVal {
-					rv := reflect.ValueOf(newValBytes)
-					sliceReflect = reflect.Append(sliceReflect, rv)
+					sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(newValBytes))
 				}
 				field.Set(sliceReflect)
+			case reflect.Struct:
+				// Recursion, I guess
+				sliceReflect := reflect.MakeSlice(field.Type(), 0, 0)
+				for j := uint32(0); j < numItems; j++ {
+					// @TODO Need to solve this for real - recursion is probably the answer
+					// I happen to know this is only used for Capabilities for now, so
+					// its a bit hardcoded
+					capability := Capability{}
+
+					// CapabilityType is uint16:
+					newVal, bytes, err = util.ShiftNBytes(2, bytes)
+					if err != nil {
+						return err
+					}
+					capability.Capability = CapabilityType(util.BytesToUint16(newVal))
+
+					// Enabled is string:
+					// 4 byte size prefix, then []byte which can be converted to utf-8 string
+					// Get 4 byte length prefix
+					var strLength []byte
+					strLength, bytes, err = util.ShiftNBytes(4, bytes)
+					numBytes := binary.BigEndian.Uint32(strLength)
+
+					var strBytes []byte
+					strBytes, bytes, err = util.ShiftNBytes(uint(numBytes), bytes)
+					capability.Value = string(strBytes)
+
+					sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(capability))
+				}
+				field.Set(sliceReflect)
+			default:
+				return fmt.Errorf("encountered type inside slice that is not implemented")
 			}
 		case reflect.String:
 			// 4 byte size prefix, then []byte which can be converted to utf-8 string
@@ -226,6 +256,22 @@ func Marshal(v interface{}) ([]byte, error) {
 			case reflect.Uint8: // same as byte
 				// This is the easy case - already a slice of bytes
 				finalBytes = append(finalBytes, field.Bytes()...)
+			case reflect.Struct:
+				// @TODO again this is super hacky and manual and only works for Capability right now
+				for j := 0; j < field.Len(); j++ {
+					currentStruct := field.Index(j)
+					capabilityType := uint16(currentStruct.Field(0).Uint())
+					valueStrBytes := []byte(currentStruct.Field(1).String())
+
+					finalBytes = append(finalBytes, util.Uint16ToBytes(capabilityType)...)
+
+					// String stuff...
+					numBytes := uint32(len(valueStrBytes))
+					finalBytes = append(finalBytes, util.Uint32ToBytes(numBytes)...)
+
+					finalBytes = append(finalBytes, valueStrBytes...)
+				}
+				log.Println("done")
 			}
 		case reflect.String:
 			// Strings get converted to []byte with a 4 byte size prefix

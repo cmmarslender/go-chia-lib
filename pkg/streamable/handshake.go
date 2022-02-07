@@ -24,12 +24,27 @@ const (
 	NodeTypeWallet NodeType = 6
 )
 
+// CapabilityType is an internal references for types of capabilities
+type CapabilityType uint16
+
+const (
+	// CapabilityTypeBase just means it supports the chia protocol at mainnet
+	CapabilityTypeBase CapabilityType = 1
+)
+
+// Capability reflects a capability of the peer
+// This represents the Tuple that exists in the Python code
+type Capability struct {
+	Capability CapabilityType `streamable:""`
+	Value      string         `streamable:""`
+}
+
 // Handshake is a handshake message
 type Handshake struct {
-	NetworkID       string   `streamable:""`
-	ProtocolVersion string   `streamable:""`
-	SoftwareVersion string   `streamable:""`
-	ServerPort      uint16   `streamable:""`
-	NodeType        NodeType `streamable:""`
-	// Capabilities List[Tuple[uint16, str]] // @TODO Support this
+	NetworkID       string       `streamable:""`
+	ProtocolVersion string       `streamable:""`
+	SoftwareVersion string       `streamable:""`
+	ServerPort      uint16       `streamable:""`
+	NodeType        NodeType     `streamable:""`
+	Capabilities    []Capability `streamable:""` // List[Tuple[uint16, str]]
 }
