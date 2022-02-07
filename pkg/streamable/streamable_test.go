@@ -46,11 +46,17 @@ func TestUnmarshal(t *testing.T) {
 }
 
 func TestMarshal(t *testing.T) {
+	encodedBytes, err := hex.DecodeString(encodedHex)
+	assert.NoError(t, err)
+
 	msg := &streamable.Message{
 		ProtocolMessageType: streamable.ProtocolMessageTypeHandshake,
 		ID:                  nil,
 		Data:                []byte("This is a sample message to decode"),
 	}
 
-	streamable.Marshal(msg)
+	bytes, err := streamable.Marshal(msg)
+
+	assert.NoError(t, err)
+	assert.Equal(t, encodedBytes, bytes)
 }
