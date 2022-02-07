@@ -63,6 +63,10 @@ func Unmarshal(bytes []byte, v interface{}) error {
 		// This is the hackiest of hacky ways to check if this is ACTUALLY optional
 		// @TODO one day need to actually parse these options out properly
 		if strings.Contains(tag, "optional") {
+			if field.Kind() != reflect.Ptr {
+				return fmt.Errorf("optional fields must be pointer types")
+			}
+
 			// Its optional, check if we have actual data
 			var presentFlag []byte
 			presentFlag, bytes, err = util.ShiftNBytes(1, bytes)
@@ -73,13 +77,21 @@ func Unmarshal(bytes []byte, v interface{}) error {
 			}
 		}
 
-		switch field.Kind() {
+		switch kind := field.Kind(); kind {
 		case reflect.Ptr:
-			// @TODO
-			ptrKind := field.Type().Elem().Kind()
-			log.Println("Its a ptr, and its slice type is ", ptrKind)
+			switch field.Type().Elem().Kind() {
+			case reflect.Uint16:
+				newVal, bytes, err = util.ShiftNBytes(2, bytes)
+				if err != nil {
+					return err
+				}
+				if !field.CanSet() {
+					return fmt.Errorf("field %s is not settable", field.String())
+				}
+				newInt := util.BytesToUint16(newVal)
+				field.Set(reflect.ValueOf(util.PtrUint16(newInt)))
+			}
 		case reflect.Uint8:
-			// 1 byte
 			newVal, bytes, err = util.ShiftNBytes(1, bytes)
 			if err != nil {
 				return err
@@ -87,11 +99,17 @@ func Unmarshal(bytes []byte, v interface{}) error {
 			if !field.CanSet() {
 				return fmt.Errorf("field %s is not settable", field.String())
 			}
-			field.SetUint(uint64(newVal[0]))
+			field.SetUint(uint64(util.BytesToUint8(newVal)))
 		case reflect.Uint16:
-			// @TODO
-			// 2 bytes
-
+			newVal, bytes, err = util.ShiftNBytes(2, bytes)
+			if err != nil {
+				return err
+			}
+			if !field.CanSet() {
+				return fmt.Errorf("field %s is not settable", field.String())
+			}
+			newInt := util.BytesToUint16(newVal)
+			field.SetUint(uint64(newInt))
 		case reflect.Slice:
 			// Slice/List is 4 byte prefix (number of items) and then serialization of each item
 			// Get 4 byte length prefix
@@ -120,7 +138,7 @@ func Unmarshal(bytes []byte, v interface{}) error {
 				field.Set(sliceReflect)
 			}
 		default:
-			return fmt.Errorf("unimplemented type")
+			return fmt.Errorf("unimplemented type %s", field.Kind())
 		}
 	}
 
@@ -161,6 +179,10 @@ func Marshal(v interface{}) ([]byte, error) {
 		// This is the hackiest of hacky ways to check if this is ACTUALLY optional
 		// @TODO one day need to actually parse these options out properly
 		if strings.Contains(tag, "optional") {
+			if field.Kind() != reflect.Ptr {
+				return nil, fmt.Errorf("optional fields must be pointer types")
+			}
+
 			// Its optional, check if we have actual data
 			if field.IsNil() {
 				// Field is nil, insert `false` byte and continue
@@ -171,6 +193,7 @@ func Marshal(v interface{}) ([]byte, error) {
 			finalBytes = append(finalBytes, boolTrue)
 		}
 
+		// If field is still a pointer, get rid of that now that we're past the optional checking
 		field = reflect.Indirect(field)
 
 		switch field.Kind() {
@@ -178,10 +201,10 @@ func Marshal(v interface{}) ([]byte, error) {
 			panic("How did we get a pointer after calling Indirect?")
 		case reflect.Uint8:
 			newInt := uint8(field.Uint())
-			// Only putting the first one, because it's a uint8
 			finalBytes = append(finalBytes, newInt)
 		case reflect.Uint16:
-			//finalBytes = append(finalBytes, field.Bytes()...)
+			newInt := uint16(field.Uint())
+			finalBytes = append(finalBytes, util.Uint16ToBytes(newInt)...)
 		case reflect.Slice:
 			// Slice/List is 4 byte prefix (number of items) and then serialization of each item
 			// Get 4 byte length prefix
@@ -195,7 +218,7 @@ func Marshal(v interface{}) ([]byte, error) {
 				finalBytes = append(finalBytes, field.Bytes()...)
 			}
 		default:
-			return nil, fmt.Errorf("unimplemented type")
+			return nil, fmt.Errorf("unimplemented type %s", field.Kind())
 		}
 	}
 
