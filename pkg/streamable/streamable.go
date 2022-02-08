@@ -44,145 +44,162 @@ func Unmarshal(bytes []byte, v interface{}) error {
 		return fmt.Errorf("streamable can't unmarshal into non-struct type")
 	}
 
+	bytes, err := unmarshalStruct(bytes, t, tv)
+	return err
+}
+
+func unmarshalStruct(bytes []byte, t reflect.Type, tv reflect.Value) ([]byte, error) {
+	var err error
+
 	// Iterate over all available fields and read the tag value
 	for i := 0; i < t.NumField(); i++ {
-		tField := t.Field(i) // Field Type
-		field := tv.Field(i) // Field Value
+		structField := t.Field(i) // Struct Field
+		fieldValue := tv.Field(i) // Field Value
+		fieldType := fieldValue.Type()
 
-		var tag string
-		var tagPresent bool
-		if tag, tagPresent = tField.Tag.Lookup(tagName); !tagPresent {
-			// Continuing because the tag isn't present
-			continue
-		}
-
-		var err error
-		var newVal []byte
-
-		// If optional, should be one byte bool that indicates if its present or not
-		// This is the hackiest of hacky ways to check if this is ACTUALLY optional
-		// @TODO one day need to actually parse these options out properly
-		if strings.Contains(tag, "optional") {
-			if field.Kind() != reflect.Ptr {
-				return fmt.Errorf("optional fields must be pointer types")
-			}
-
-			// Its optional, check if we have actual data
-			var presentFlag []byte
-			presentFlag, bytes, err = util.ShiftNBytes(1, bytes)
-			if presentFlag[0] == boolFalse {
-				// Not present in the data, continue
-				log.Println("This field was omitted. Skipping...")
-				continue
-			}
-		}
-
-		switch kind := field.Kind(); kind {
-		case reflect.Ptr:
-			switch field.Type().Elem().Kind() {
-			case reflect.Uint16:
-				newVal, bytes, err = util.ShiftNBytes(2, bytes)
-				if err != nil {
-					return err
-				}
-				if !field.CanSet() {
-					return fmt.Errorf("field %s is not settable", field.String())
-				}
-				newInt := util.BytesToUint16(newVal)
-				field.Set(reflect.ValueOf(util.PtrUint16(newInt)))
-			}
-		case reflect.Uint8:
-			newVal, bytes, err = util.ShiftNBytes(1, bytes)
-			if err != nil {
-				return err
-			}
-			if !field.CanSet() {
-				return fmt.Errorf("field %s is not settable", field.String())
-			}
-			field.SetUint(uint64(util.BytesToUint8(newVal)))
-		case reflect.Uint16:
-			newVal, bytes, err = util.ShiftNBytes(2, bytes)
-			if err != nil {
-				return err
-			}
-			if !field.CanSet() {
-				return fmt.Errorf("field %s is not settable", field.String())
-			}
-			newInt := util.BytesToUint16(newVal)
-			field.SetUint(uint64(newInt))
-		case reflect.Slice:
-			// Slice/List is 4 byte prefix (number of items) and then serialization of each item
-			// Get 4 byte length prefix
-			var length []byte
-			length, bytes, err = util.ShiftNBytes(4, bytes)
-			numItems := binary.BigEndian.Uint32(length)
-
-			sliceKind := field.Type().Elem().Kind()
-			switch sliceKind {
-			case reflect.Uint8: // same as byte
-				// In this case, numItems == numBytes, because its a uint8
-				newVal, bytes, err = util.ShiftNBytes(uint(numItems), bytes)
-				if err != nil {
-					return err
-				}
-				if !field.CanSet() {
-					return fmt.Errorf("field %s is not settable", field.String())
-				}
-
-				sliceReflect := reflect.MakeSlice(field.Type(), 0, 0)
-				for _, newValBytes := range newVal {
-					sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(newValBytes))
-				}
-				field.Set(sliceReflect)
-			case reflect.Struct:
-				// Recursion, I guess
-				sliceReflect := reflect.MakeSlice(field.Type(), 0, 0)
-				for j := uint32(0); j < numItems; j++ {
-					// @TODO Need to solve this for real - recursion is probably the answer
-					// I happen to know this is only used for Capabilities for now, so
-					// its a bit hardcoded
-					capability := Capability{}
-
-					// CapabilityType is uint16:
-					newVal, bytes, err = util.ShiftNBytes(2, bytes)
-					if err != nil {
-						return err
-					}
-					capability.Capability = CapabilityType(util.BytesToUint16(newVal))
-
-					// Enabled is string:
-					// 4 byte size prefix, then []byte which can be converted to utf-8 string
-					// Get 4 byte length prefix
-					var strLength []byte
-					strLength, bytes, err = util.ShiftNBytes(4, bytes)
-					numBytes := binary.BigEndian.Uint32(strLength)
-
-					var strBytes []byte
-					strBytes, bytes, err = util.ShiftNBytes(uint(numBytes), bytes)
-					capability.Value = string(strBytes)
-
-					sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(capability))
-				}
-				field.Set(sliceReflect)
-			default:
-				return fmt.Errorf("encountered type inside slice that is not implemented")
-			}
-		case reflect.String:
-			// 4 byte size prefix, then []byte which can be converted to utf-8 string
-			// Get 4 byte length prefix
-			var length []byte
-			length, bytes, err = util.ShiftNBytes(4, bytes)
-			numBytes := binary.BigEndian.Uint32(length)
-
-			var strBytes []byte
-			strBytes, bytes, err = util.ShiftNBytes(uint(numBytes), bytes)
-			field.SetString(string(strBytes))
-		default:
-			return fmt.Errorf("unimplemented type %s", field.Kind())
+		bytes, err = unmarshalField(bytes, fieldType, fieldValue, structField)
+		if err != nil {
+			return bytes, err
 		}
 	}
 
-	return nil
+	return bytes, nil
+}
+
+func unmarshalField(bytes []byte, fieldType reflect.Type, fieldValue reflect.Value, structField reflect.StructField) ([]byte, error) {
+	var tag string
+	var tagPresent bool
+	if tag, tagPresent = structField.Tag.Lookup(tagName); !tagPresent {
+		// Continuing because the tag isn't present
+		return bytes, nil
+	}
+
+	var err error
+	var newVal []byte
+
+	// If optional, should be one byte bool that indicates if its present or not
+	// This is the hackiest of hacky ways to check if this is ACTUALLY optional
+	// @TODO one day need to actually parse these options out properly
+	if strings.Contains(tag, "optional") {
+		if fieldValue.Kind() != reflect.Ptr {
+			return nil, fmt.Errorf("optional fields must be pointer types")
+		}
+
+		// Its optional, check if we have actual data
+		var presentFlag []byte
+		presentFlag, bytes, err = util.ShiftNBytes(1, bytes)
+		if presentFlag[0] == boolFalse {
+			// Not present in the data, continue
+			log.Println("This field was omitted. Skipping...")
+			return bytes, nil
+		}
+	}
+
+	switch kind := fieldValue.Kind(); kind {
+	case reflect.Ptr:
+		switch fieldValue.Type().Elem().Kind() {
+		case reflect.Uint16:
+			newVal, bytes, err = util.ShiftNBytes(2, bytes)
+			if err != nil {
+				return bytes, err
+			}
+			if !fieldValue.CanSet() {
+				return bytes, fmt.Errorf("field %s is not settable", fieldValue.String())
+			}
+			newInt := util.BytesToUint16(newVal)
+			fieldValue.Set(reflect.ValueOf(util.PtrUint16(newInt)))
+		}
+	case reflect.Uint8:
+		newVal, bytes, err = util.ShiftNBytes(1, bytes)
+		if err != nil {
+			return bytes, err
+		}
+		if !fieldValue.CanSet() {
+			return bytes, fmt.Errorf("field %s is not settable", fieldValue.String())
+		}
+		fieldValue.SetUint(uint64(util.BytesToUint8(newVal)))
+	case reflect.Uint16:
+		newVal, bytes, err = util.ShiftNBytes(2, bytes)
+		if err != nil {
+			return bytes, err
+		}
+		if !fieldValue.CanSet() {
+			return bytes, fmt.Errorf("field %s is not settable", fieldValue.String())
+		}
+		newInt := util.BytesToUint16(newVal)
+		fieldValue.SetUint(uint64(newInt))
+	case reflect.Slice:
+		// Slice/List is 4 byte prefix (number of items) and then serialization of each item
+		// Get 4 byte length prefix
+		var length []byte
+		length, bytes, err = util.ShiftNBytes(4, bytes)
+		numItems := binary.BigEndian.Uint32(length)
+
+		sliceKind := fieldValue.Type().Elem().Kind()
+		switch sliceKind {
+		case reflect.Uint8: // same as byte
+			// In this case, numItems == numBytes, because its a uint8
+			newVal, bytes, err = util.ShiftNBytes(uint(numItems), bytes)
+			if err != nil {
+				return bytes, err
+			}
+			if !fieldValue.CanSet() {
+				return bytes, fmt.Errorf("field %s is not settable", fieldValue.String())
+			}
+
+			sliceReflect := reflect.MakeSlice(fieldValue.Type(), 0, 0)
+			for _, newValBytes := range newVal {
+				sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(newValBytes))
+			}
+			fieldValue.Set(sliceReflect)
+		case reflect.Struct:
+			// Recursion, I guess
+			sliceReflect := reflect.MakeSlice(fieldValue.Type(), 0, 0)
+			for j := uint32(0); j < numItems; j++ {
+				// @TODO Need to solve this for real - recursion is probably the answer
+				// I happen to know this is only used for Capabilities for now, so
+				// its a bit hardcoded
+				capability := Capability{}
+
+				// CapabilityType is uint16:
+				newVal, bytes, err = util.ShiftNBytes(2, bytes)
+				if err != nil {
+					return bytes, err
+				}
+				capability.Capability = CapabilityType(util.BytesToUint16(newVal))
+
+				// Enabled is string:
+				// 4 byte size prefix, then []byte which can be converted to utf-8 string
+				// Get 4 byte length prefix
+				var strLength []byte
+				strLength, bytes, err = util.ShiftNBytes(4, bytes)
+				numBytes := binary.BigEndian.Uint32(strLength)
+
+				var strBytes []byte
+				strBytes, bytes, err = util.ShiftNBytes(uint(numBytes), bytes)
+				capability.Value = string(strBytes)
+
+				sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(capability))
+			}
+			fieldValue.Set(sliceReflect)
+		default:
+			return bytes, fmt.Errorf("encountered type inside slice that is not implemented")
+		}
+	case reflect.String:
+		// 4 byte size prefix, then []byte which can be converted to utf-8 string
+		// Get 4 byte length prefix
+		var length []byte
+		length, bytes, err = util.ShiftNBytes(4, bytes)
+		numBytes := binary.BigEndian.Uint32(length)
+
+		var strBytes []byte
+		strBytes, bytes, err = util.ShiftNBytes(uint(numBytes), bytes)
+		fieldValue.SetString(string(strBytes))
+	default:
+		return bytes, fmt.Errorf("unimplemented type %s", fieldValue.Kind())
+	}
+
+	return bytes, nil
 }
 
 // Marshal marshals the item into the streamable byte format
