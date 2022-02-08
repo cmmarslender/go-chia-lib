@@ -6,7 +6,7 @@ package protocols
 const ProtocolVersion string = "0.0.33"
 
 // NodeType is the type of peer (farmer, full node, etc)
-// @todo This is also duplicated in the RPC lib. Probably a good candidate for the go-lib
+// Source for node types is chia/server/outbound_messages.py
 type NodeType uint8
 
 const (
