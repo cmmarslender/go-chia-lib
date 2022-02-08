@@ -4,5 +4,5 @@ package types
 type TimestampedPeerInfo struct {
 	Host      string `streamable:""`
 	Port      uint16 `streamable:""`
-	timestamp uint64 `streamable:""`
+	Timestamp uint64 `streamable:""`
 }

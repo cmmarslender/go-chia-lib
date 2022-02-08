@@ -43,3 +43,17 @@ func Uint32ToBytes(num uint32) []byte {
 func BytesToUint32(bytes []byte) uint32 {
 	return binary.BigEndian.Uint32(bytes)
 }
+
+// Uint64ToBytes Converts uint64 to []byte
+func Uint64ToBytes(num uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, num)
+
+	return b
+}
+
+// BytesToUint64 returns uint64 from []byte
+// if you have more than eight bytes in your []byte this wont work like you think
+func BytesToUint64(bytes []byte) uint64 {
+	return binary.BigEndian.Uint64(bytes)
+}

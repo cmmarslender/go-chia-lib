@@ -159,6 +159,16 @@ func unmarshalField(bytes []byte, fieldType reflect.Type, fieldValue reflect.Val
 		}
 		newInt := util.BytesToUint16(newVal)
 		fieldValue.SetUint(uint64(newInt))
+	case reflect.Uint64:
+		newVal, bytes, err = util.ShiftNBytes(8, bytes)
+		if err != nil {
+			return bytes, err
+		}
+		if !fieldValue.CanSet() {
+			return bytes, fmt.Errorf("field %s is not settable", fieldValue.String())
+		}
+		newInt := util.BytesToUint64(newVal)
+		fieldValue.SetUint(newInt)
 	case reflect.Slice:
 		bytes, err = unmarshalSlice(bytes, fieldType, fieldValue)
 		if err != nil {
@@ -285,6 +295,8 @@ func marshalField(finalBytes []byte, fieldType reflect.Type, fieldValue reflect.
 	case reflect.Uint16:
 		newInt := uint16(fieldValue.Uint())
 		finalBytes = append(finalBytes, util.Uint16ToBytes(newInt)...)
+	case reflect.Uint64:
+		finalBytes = append(finalBytes, util.Uint64ToBytes(fieldValue.Uint())...)
 	case reflect.Slice:
 		finalBytes, err = marshalSlice(finalBytes, fieldType, fieldValue)
 		if err != nil {
