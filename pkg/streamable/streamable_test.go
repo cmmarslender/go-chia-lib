@@ -83,6 +83,22 @@ func TestMarshal_Message1(t *testing.T) {
 	assert.Equal(t, encodedBytes, bytes)
 }
 
+// Unmarshals fully then remarshals to ensure we can go back and forth
+func TestUnmarshal_Remarshal_Message1(t *testing.T) {
+	encodedBytes, err := hex.DecodeString(encodedHex1)
+	assert.NoError(t, err)
+
+	msg := &streamable.Message{}
+
+	err = streamable.Unmarshal(encodedBytes, msg)
+	assert.NoError(t, err)
+
+	// Remarshal and check against original bytes
+	reencodedBytes, err := streamable.Marshal(msg)
+	assert.NoError(t, err)
+	assert.Equal(t, encodedBytes, reencodedBytes)
+}
+
 func TestUnmarshal_Message2(t *testing.T) {
 	// Hex to bytes
 	encodedBytes, err := hex.DecodeString(encodedHex2)
@@ -126,6 +142,22 @@ func TestMarshal_Message2(t *testing.T) {
 	assert.Equal(t, encodedBytes, bytes)
 }
 
+// Unmarshals fully then remarshals to ensure we can go back and forth
+func TestUnmarshal_Remarshal_Message2(t *testing.T) {
+	encodedBytes, err := hex.DecodeString(encodedHex2)
+	assert.NoError(t, err)
+
+	msg := &streamable.Message{}
+
+	err = streamable.Unmarshal(encodedBytes, msg)
+	assert.NoError(t, err)
+
+	// Remarshal and check against original bytes
+	reencodedBytes, err := streamable.Marshal(msg)
+	assert.NoError(t, err)
+	assert.Equal(t, encodedBytes, reencodedBytes)
+}
+
 func TestUnmarshal_Handshake(t *testing.T) {
 	// Hex to bytes
 	encodedBytes, err := hex.DecodeString(encodedHexHandshake)
@@ -166,4 +198,33 @@ func TestUnmarshal_Handshake(t *testing.T) {
 
 	assert.Equal(t, streamable.CapabilityTypeBase, cap1.Capability)
 	assert.Equal(t, "1", cap1.Value)
+}
+
+// Unmarshals fully then remarshals to ensure we can go back and forth
+func TestUnmarshal_Remarshal_Handshake(t *testing.T) {
+	encodedBytes, err := hex.DecodeString(encodedHexHandshake)
+	assert.NoError(t, err)
+
+	msg := &streamable.Message{}
+
+	err = streamable.Unmarshal(encodedBytes, msg)
+	assert.NoError(t, err)
+
+	handshake := &streamable.Handshake{}
+
+	err = streamable.Unmarshal(msg.Data, handshake)
+	assert.NoError(t, err)
+
+	// Remarshal and check against original bytes
+	reencodedHandshakeBytes, err := streamable.Marshal(handshake)
+	assert.NoError(t, err)
+
+	msgToEncode := &streamable.Message{
+		ProtocolMessageType: msg.ProtocolMessageType,
+		ID:                  msg.ID,
+		Data:                reencodedHandshakeBytes,
+	}
+	reencodedBytes, err := streamable.Marshal(msgToEncode)
+	assert.NoError(t, err)
+	assert.Equal(t, encodedBytes, reencodedBytes)
 }

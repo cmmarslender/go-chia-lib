@@ -52,8 +52,8 @@ func unmarshalStruct(bytes []byte, t reflect.Type, tv reflect.Value) ([]byte, er
 
 	// Iterate over all available fields and read the tag value
 	for i := 0; i < t.NumField(); i++ {
-		structField := t.Field(i) // Struct Field
-		fieldValue := tv.Field(i) // Field Value
+		structField := t.Field(i)
+		fieldValue := tv.Field(i)
 		fieldType := fieldValue.Type()
 
 		bytes, err = unmarshalField(bytes, fieldType, fieldValue, structField)
@@ -202,87 +202,108 @@ func Marshal(v interface{}) ([]byte, error) {
 	// This will become the final encoded data
 	var finalBytes []byte
 
+	return marshalStruct(finalBytes, t, tv)
+}
+
+func marshalStruct(finalBytes []byte, t reflect.Type, tv reflect.Value) ([]byte, error) {
+	var err error
+
 	// Iterate over all available fields in the type and encode to bytes
 	for i := 0; i < t.NumField(); i++ {
-		tField := t.Field(i) // Field Type
-		field := tv.Field(i) // Field Value
+		structField := t.Field(i)
+		fieldValue := tv.Field(i)
+		fieldType := fieldValue.Type()
 
-		var tag string
-		var tagPresent bool
-		if tag, tagPresent = tField.Tag.Lookup(tagName); !tagPresent {
-			// Continuing because the tag isn't present
-			continue
+		finalBytes, err = marshalField(finalBytes, fieldType, fieldValue, structField)
+		if err != nil {
+			return finalBytes, err
+		}
+	}
+
+	return finalBytes, nil
+}
+
+func marshalSlice(finalBytes []byte, t reflect.Type, v reflect.Value) ([]byte, error) {
+	var err error
+
+	// Slice/List is 4 byte prefix (number of items) and then serialization of each item
+	// Get 4 byte length prefix
+	numItems := uint32(v.Len())
+	finalBytes = append(finalBytes, util.Uint32ToBytes(numItems)...)
+
+	sliceKind := t.Elem().Kind()
+	switch sliceKind {
+	case reflect.Uint8: // same as byte
+		// This is the easy case - already a slice of bytes
+		finalBytes = append(finalBytes, v.Bytes()...)
+	case reflect.Struct:
+		for j := 0; j < v.Len(); j++ {
+			currentStruct := v.Index(j)
+
+			finalBytes, err = marshalStruct(finalBytes, currentStruct.Type(), currentStruct)
+			if err != nil {
+				return finalBytes, err
+			}
+		}
+	}
+
+	return finalBytes, nil
+}
+
+func marshalField(finalBytes []byte, fieldType reflect.Type, fieldValue reflect.Value, structField reflect.StructField) ([]byte, error) {
+	var err error
+
+	var tag string
+	var tagPresent bool
+	if tag, tagPresent = structField.Tag.Lookup(tagName); !tagPresent {
+		// Continuing because the tag isn't present
+		return finalBytes, nil
+	}
+
+	// If optional, the type MUST be a pointer type
+	// nil pointer will be assumed to be not present, and we'll insert 0x00 and move on
+	// Anything other than nil pointer we'll insert 0x01 and encode the value
+	// This is the hackiest of hacky ways to check if this is ACTUALLY optional
+	// @TODO one day need to actually parse these options out properly
+	if strings.Contains(tag, "optional") {
+		if fieldValue.Kind() != reflect.Ptr {
+			return nil, fmt.Errorf("optional fields must be pointer types")
 		}
 
-		// If optional, the type MUST be a pointer type
-		// nil pointer will be assumed to be not present, and we'll insert 0x00 and move on
-		// Anything other than nil pointer we'll insert 0x01 and encode the value
-		// This is the hackiest of hacky ways to check if this is ACTUALLY optional
-		// @TODO one day need to actually parse these options out properly
-		if strings.Contains(tag, "optional") {
-			if field.Kind() != reflect.Ptr {
-				return nil, fmt.Errorf("optional fields must be pointer types")
-			}
-
-			// Its optional, check if we have actual data
-			if field.IsNil() {
-				// Field is nil, insert `false` byte and continue
-				finalBytes = append(finalBytes, boolFalse)
-				continue
-			}
-
-			finalBytes = append(finalBytes, boolTrue)
+		// Its optional, check if we have actual data
+		if fieldValue.IsNil() {
+			// Field is nil, insert `false` byte and continue
+			finalBytes = append(finalBytes, boolFalse)
+			return finalBytes, nil
 		}
 
-		// If field is still a pointer, get rid of that now that we're past the optional checking
-		field = reflect.Indirect(field)
+		finalBytes = append(finalBytes, boolTrue)
+	}
 
-		switch field.Kind() {
-		case reflect.Ptr:
-			panic("How did we get a pointer after calling Indirect?")
-		case reflect.Uint8:
-			newInt := uint8(field.Uint())
-			finalBytes = append(finalBytes, newInt)
-		case reflect.Uint16:
-			newInt := uint16(field.Uint())
-			finalBytes = append(finalBytes, util.Uint16ToBytes(newInt)...)
-		case reflect.Slice:
-			// Slice/List is 4 byte prefix (number of items) and then serialization of each item
-			// Get 4 byte length prefix
-			numItems := uint32(field.Len())
-			finalBytes = append(finalBytes, util.Uint32ToBytes(numItems)...)
+	// If field is still a pointer, get rid of that now that we're past the optional checking
+	fieldValue = reflect.Indirect(fieldValue)
 
-			sliceKind := field.Type().Elem().Kind()
-			switch sliceKind {
-			case reflect.Uint8: // same as byte
-				// This is the easy case - already a slice of bytes
-				finalBytes = append(finalBytes, field.Bytes()...)
-			case reflect.Struct:
-				// @TODO again this is super hacky and manual and only works for Capability right now
-				for j := 0; j < field.Len(); j++ {
-					currentStruct := field.Index(j)
-					capabilityType := uint16(currentStruct.Field(0).Uint())
-					valueStrBytes := []byte(currentStruct.Field(1).String())
-
-					finalBytes = append(finalBytes, util.Uint16ToBytes(capabilityType)...)
-
-					// String stuff...
-					numBytes := uint32(len(valueStrBytes))
-					finalBytes = append(finalBytes, util.Uint32ToBytes(numBytes)...)
-
-					finalBytes = append(finalBytes, valueStrBytes...)
-				}
-			}
-		case reflect.String:
-			// Strings get converted to []byte with a 4 byte size prefix
-			strBytes := []byte(field.String())
-			numBytes := uint32(len(strBytes))
-			finalBytes = append(finalBytes, util.Uint32ToBytes(numBytes)...)
-
-			finalBytes = append(finalBytes, strBytes...)
-		default:
-			return nil, fmt.Errorf("unimplemented type %s", field.Kind())
+	switch fieldValue.Kind() {
+	case reflect.Uint8:
+		newInt := uint8(fieldValue.Uint())
+		finalBytes = append(finalBytes, newInt)
+	case reflect.Uint16:
+		newInt := uint16(fieldValue.Uint())
+		finalBytes = append(finalBytes, util.Uint16ToBytes(newInt)...)
+	case reflect.Slice:
+		finalBytes, err = marshalSlice(finalBytes, fieldType, fieldValue)
+		if err != nil {
+			return finalBytes, err
 		}
+	case reflect.String:
+		// Strings get converted to []byte with a 4 byte size prefix
+		strBytes := []byte(fieldValue.String())
+		numBytes := uint32(len(strBytes))
+		finalBytes = append(finalBytes, util.Uint32ToBytes(numBytes)...)
+
+		finalBytes = append(finalBytes, strBytes...)
+	default:
+		return finalBytes, fmt.Errorf("unimplemented type %s", fieldValue.Kind())
 	}
 
 	return finalBytes, nil
