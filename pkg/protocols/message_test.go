@@ -9,6 +9,18 @@ import (
 	"github.com/cmmarslender/go-chia-lib/pkg/protocols"
 )
 
+func TestMakeMessage(t *testing.T) {
+
+}
+
+func TestMakeMessage_NilData(t *testing.T) {
+	msg, err := protocols.MakeMessage(protocols.ProtocolMessageTypeHandshake, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, protocols.ProtocolMessageTypeHandshake, msg.ProtocolMessageType)
+	assert.Nil(t, msg.ID)
+	assert.Equal(t, []byte(nil), msg.Data)
+}
+
 func TestDecodeMessage(t *testing.T) {
 	//Message(
 	//	uint8(ProtocolMessageTypes.handshake.value),

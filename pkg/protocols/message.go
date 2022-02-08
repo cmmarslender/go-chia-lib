@@ -11,15 +11,24 @@ type Message struct {
 	Data                []byte              `streamable:""`
 }
 
+// DecodeData decodes the data in the message to the provided type
+func (m *Message) DecodeData(v interface{}) error {
+	return streamable.Unmarshal(m.Data, v)
+}
+
 // MakeMessage makes a new Message with the given data
 func MakeMessage(messageType ProtocolMessageType, data interface{}) (*Message, error) {
 	msg := &Message{
 		ProtocolMessageType: messageType,
 	}
 
-	dataBytes, err := streamable.Marshal(data)
-	if err != nil {
-		return nil, err
+	var dataBytes []byte
+	var err error
+	if data != nil {
+		dataBytes, err = streamable.Marshal(data)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	msg.Data = dataBytes
@@ -56,5 +65,5 @@ func DecodeMessageData(bytes []byte, v interface{}) error {
 		return err
 	}
 
-	return streamable.Unmarshal(msg.Data, v)
+	return msg.DecodeData(v)
 }
