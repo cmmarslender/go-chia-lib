@@ -3,7 +3,6 @@ package streamable
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 
@@ -66,6 +65,49 @@ func unmarshalStruct(bytes []byte, t reflect.Type, tv reflect.Value) ([]byte, er
 	return bytes, nil
 }
 
+func unmarshalSlice(bytes []byte, t reflect.Type, v reflect.Value) ([]byte, error) {
+	var err error
+	var newVal []byte
+
+	// Slice/List is 4 byte prefix (number of items) and then serialization of each item
+	// Get 4 byte length prefix
+	var length []byte
+	length, bytes, err = util.ShiftNBytes(4, bytes)
+	numItems := binary.BigEndian.Uint32(length)
+
+	sliceKind := t.Elem().Kind()
+	switch sliceKind {
+	case reflect.Uint8: // same as byte
+		// In this case, numItems == numBytes, because its a uint8
+		newVal, bytes, err = util.ShiftNBytes(uint(numItems), bytes)
+		if err != nil {
+			return bytes, err
+		}
+		if !v.CanSet() {
+			return bytes, fmt.Errorf("field %s is not settable", v.String())
+		}
+
+		sliceReflect := reflect.MakeSlice(v.Type(), 0, 0)
+		for _, newValBytes := range newVal {
+			sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(newValBytes))
+		}
+		v.Set(sliceReflect)
+	case reflect.Struct:
+		// Recursion, I guess
+		sliceReflect := reflect.MakeSlice(v.Type(), 0, 0)
+		for j := uint32(0); j < numItems; j++ {
+			newValue := reflect.Indirect(reflect.New(v.Type().Elem()))
+			bytes, err = unmarshalStruct(bytes, t.Elem(), newValue)
+			sliceReflect = reflect.Append(sliceReflect, newValue)
+		}
+		v.Set(sliceReflect)
+	default:
+		return bytes, fmt.Errorf("encountered type inside slice that is not implemented")
+	}
+
+	return bytes, nil
+}
+
 func unmarshalField(bytes []byte, fieldType reflect.Type, fieldValue reflect.Value, structField reflect.StructField) ([]byte, error) {
 	var tag string
 	var tagPresent bool
@@ -90,25 +132,19 @@ func unmarshalField(bytes []byte, fieldType reflect.Type, fieldValue reflect.Val
 		presentFlag, bytes, err = util.ShiftNBytes(1, bytes)
 		if presentFlag[0] == boolFalse {
 			// Not present in the data, continue
-			log.Println("This field was omitted. Skipping...")
 			return bytes, nil
 		}
 	}
 
-	switch kind := fieldValue.Kind(); kind {
-	case reflect.Ptr:
-		switch fieldValue.Type().Elem().Kind() {
-		case reflect.Uint16:
-			newVal, bytes, err = util.ShiftNBytes(2, bytes)
-			if err != nil {
-				return bytes, err
-			}
-			if !fieldValue.CanSet() {
-				return bytes, fmt.Errorf("field %s is not settable", fieldValue.String())
-			}
-			newInt := util.BytesToUint16(newVal)
-			fieldValue.Set(reflect.ValueOf(util.PtrUint16(newInt)))
-		}
+	if fieldType.Kind() == reflect.Ptr {
+		fieldType = fieldType.Elem()
+
+		// Need to init the field to something non-nil before using it
+		fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
+		fieldValue = fieldValue.Elem()
+	}
+
+	switch kind := fieldType.Kind(); kind {
 	case reflect.Uint8:
 		newVal, bytes, err = util.ShiftNBytes(1, bytes)
 		if err != nil {
@@ -129,61 +165,9 @@ func unmarshalField(bytes []byte, fieldType reflect.Type, fieldValue reflect.Val
 		newInt := util.BytesToUint16(newVal)
 		fieldValue.SetUint(uint64(newInt))
 	case reflect.Slice:
-		// Slice/List is 4 byte prefix (number of items) and then serialization of each item
-		// Get 4 byte length prefix
-		var length []byte
-		length, bytes, err = util.ShiftNBytes(4, bytes)
-		numItems := binary.BigEndian.Uint32(length)
-
-		sliceKind := fieldValue.Type().Elem().Kind()
-		switch sliceKind {
-		case reflect.Uint8: // same as byte
-			// In this case, numItems == numBytes, because its a uint8
-			newVal, bytes, err = util.ShiftNBytes(uint(numItems), bytes)
-			if err != nil {
-				return bytes, err
-			}
-			if !fieldValue.CanSet() {
-				return bytes, fmt.Errorf("field %s is not settable", fieldValue.String())
-			}
-
-			sliceReflect := reflect.MakeSlice(fieldValue.Type(), 0, 0)
-			for _, newValBytes := range newVal {
-				sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(newValBytes))
-			}
-			fieldValue.Set(sliceReflect)
-		case reflect.Struct:
-			// Recursion, I guess
-			sliceReflect := reflect.MakeSlice(fieldValue.Type(), 0, 0)
-			for j := uint32(0); j < numItems; j++ {
-				// @TODO Need to solve this for real - recursion is probably the answer
-				// I happen to know this is only used for Capabilities for now, so
-				// its a bit hardcoded
-				capability := Capability{}
-
-				// CapabilityType is uint16:
-				newVal, bytes, err = util.ShiftNBytes(2, bytes)
-				if err != nil {
-					return bytes, err
-				}
-				capability.Capability = CapabilityType(util.BytesToUint16(newVal))
-
-				// Enabled is string:
-				// 4 byte size prefix, then []byte which can be converted to utf-8 string
-				// Get 4 byte length prefix
-				var strLength []byte
-				strLength, bytes, err = util.ShiftNBytes(4, bytes)
-				numBytes := binary.BigEndian.Uint32(strLength)
-
-				var strBytes []byte
-				strBytes, bytes, err = util.ShiftNBytes(uint(numBytes), bytes)
-				capability.Value = string(strBytes)
-
-				sliceReflect = reflect.Append(sliceReflect, reflect.ValueOf(capability))
-			}
-			fieldValue.Set(sliceReflect)
-		default:
-			return bytes, fmt.Errorf("encountered type inside slice that is not implemented")
+		bytes, err = unmarshalSlice(bytes, fieldType, fieldValue)
+		if err != nil {
+			return bytes, err
 		}
 	case reflect.String:
 		// 4 byte size prefix, then []byte which can be converted to utf-8 string
@@ -288,7 +272,6 @@ func Marshal(v interface{}) ([]byte, error) {
 
 					finalBytes = append(finalBytes, valueStrBytes...)
 				}
-				log.Println("done")
 			}
 		case reflect.String:
 			// Strings get converted to []byte with a 4 byte size prefix

@@ -24,6 +24,20 @@ const (
 	//	bytes("This is a sample message to decode".encode(encoding = 'UTF-8', errors = 'string'))
 	//)
 	encodedHex2 string = "010189b8000000225468697320697320612073616d706c65206d65737361676520746f206465636f6465"
+
+	//Message(
+	//	uint8(ProtocolMessageTypes.handshake.value),
+	//	None,
+	//	Handshake(
+	//      "mainnet",
+	//      "0.0.33",
+	//      "1.2.11",
+	//      uint16(8444),
+	//      uint8(1),
+	//      [(uint16(Capability.BASE.value), "1")],
+	//  )
+	//)
+	encodedHexHandshake string = "01000000002d000000076d61696e6e657400000006302e302e333300000006312e322e313120fc010000000100010000000131"
 )
 
 func TestUnmarshal_Message1(t *testing.T) {
@@ -110,4 +124,46 @@ func TestMarshal_Message2(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, encodedBytes, bytes)
+}
+
+func TestUnmarshal_Handshake(t *testing.T) {
+	// Hex to bytes
+	encodedBytes, err := hex.DecodeString(encodedHexHandshake)
+	assert.NoError(t, err)
+
+	msg := &streamable.Message{}
+
+	err = streamable.Unmarshal(encodedBytes, msg)
+
+	assert.NoError(t, err)
+	assert.Equal(t, streamable.ProtocolMessageTypeHandshake, msg.ProtocolMessageType)
+	assert.Nil(t, msg.ID)
+
+	// No decode the handshake portion
+	handshake := &streamable.Handshake{}
+
+	//	Handshake(
+	//      "mainnet",
+	//      "0.0.33",
+	//      "1.2.11",
+	//      uint16(8444),
+	//      uint8(1),
+	//      [(uint16(Capability.BASE.value), "1")],
+	//  )
+
+	err = streamable.Unmarshal(msg.Data, handshake)
+	assert.NoError(t, err)
+	assert.Equal(t, "mainnet", handshake.NetworkID)
+	assert.Equal(t, "0.0.33", handshake.ProtocolVersion)
+	assert.Equal(t, "1.2.11", handshake.SoftwareVersion)
+	assert.Equal(t, uint16(8444), handshake.ServerPort)
+	assert.Equal(t, streamable.NodeTypeFullNode, handshake.NodeType)
+	assert.IsType(t, []streamable.Capability{}, handshake.Capabilities)
+	assert.Len(t, handshake.Capabilities, 1)
+
+	// Test each capability item
+	cap1 := handshake.Capabilities[0]
+
+	assert.Equal(t, streamable.CapabilityTypeBase, cap1.Capability)
+	assert.Equal(t, "1", cap1.Value)
 }
