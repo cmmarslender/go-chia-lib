@@ -36,3 +36,25 @@ func MakeMessageBytes(messageType ProtocolMessageType, data interface{}) ([]byte
 
 	return streamable.Marshal(msg)
 }
+
+// DecodeMessage is a helper function to quickly decode bytes to Message
+func DecodeMessage(bytes []byte) (*Message, error) {
+	msg := &Message{}
+
+	err := streamable.Unmarshal(bytes, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return msg, nil
+}
+
+// DecodeMessageData decodes a message.data into the given interface
+func DecodeMessageData(bytes []byte, v interface{}) error {
+	msg, err := DecodeMessage(bytes)
+	if err != nil {
+		return err
+	}
+
+	return streamable.Unmarshal(msg.Data, v)
+}
