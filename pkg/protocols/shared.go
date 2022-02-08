@@ -1,4 +1,9 @@
-package streamable
+package protocols
+
+// ProtocolVersion Current supported Protocol Version
+// Not all of this is supported, but this was the current version at the time
+// This library was started
+const ProtocolVersion string = "0.0.33"
 
 // NodeType is the type of peer (farmer, full node, etc)
 // @todo This is also duplicated in the RPC lib. Probably a good candidate for the go-lib

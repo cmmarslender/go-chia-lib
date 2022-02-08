@@ -1,4 +1,4 @@
-package streamable
+package protocols
 
 // ProtocolMessageType corresponds to ProtocolMessageTypes in Chia
 type ProtocolMessageType uint8
@@ -15,10 +15,3 @@ const (
 	// ProtocolMessageTypeRespondPeers respond_peers
 	ProtocolMessageTypeRespondPeers ProtocolMessageType = 44
 )
-
-// Message is a protocol message
-type Message struct {
-	ProtocolMessageType ProtocolMessageType `streamable:""`
-	ID                  *uint16             `streamable:"optional"`
-	Data                []byte              `streamable:""`
-}

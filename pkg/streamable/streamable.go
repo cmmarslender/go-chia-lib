@@ -13,11 +13,6 @@ const (
 	// Name of the struct tag used to identify the streamable properties
 	tagName = "streamable"
 
-	// ProtocolVersion Current supported Protocol Version
-	// Not all of this is supported, but this was the current version at the time
-	// This library was started
-	ProtocolVersion string = "0.0.33"
-
 	// Bytes that indicate bool yes or no when serialized
 	boolFalse uint8 = 0
 	boolTrue  uint8 = 1

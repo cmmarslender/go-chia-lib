@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/cmmarslender/go-chia-lib/pkg/protocols"
 	"github.com/cmmarslender/go-chia-lib/pkg/streamable"
 	"github.com/cmmarslender/go-chia-lib/pkg/util"
 )
@@ -49,7 +50,7 @@ func TestUnmarshal_Message1(t *testing.T) {
 	err = streamable.Unmarshal(encodedBytes, nil)
 	assert.Error(t, err)
 
-	msg := &streamable.Message{
+	msg := &protocols.Message{
 		ID:                  nil,
 		ProtocolMessageType: 0,
 		Data:                nil,
@@ -62,7 +63,7 @@ func TestUnmarshal_Message1(t *testing.T) {
 	err = streamable.Unmarshal(encodedBytes, msg)
 
 	assert.NoError(t, err)
-	assert.Equal(t, streamable.ProtocolMessageTypeHandshake, msg.ProtocolMessageType)
+	assert.Equal(t, protocols.ProtocolMessageTypeHandshake, msg.ProtocolMessageType)
 	assert.Nil(t, msg.ID)
 	assert.Equal(t, []byte("This is a sample message to decode"), msg.Data)
 }
@@ -71,8 +72,8 @@ func TestMarshal_Message1(t *testing.T) {
 	encodedBytes, err := hex.DecodeString(encodedHex1)
 	assert.NoError(t, err)
 
-	msg := &streamable.Message{
-		ProtocolMessageType: streamable.ProtocolMessageTypeHandshake,
+	msg := &protocols.Message{
+		ProtocolMessageType: protocols.ProtocolMessageTypeHandshake,
 		ID:                  nil,
 		Data:                []byte("This is a sample message to decode"),
 	}
@@ -88,7 +89,7 @@ func TestUnmarshal_Remarshal_Message1(t *testing.T) {
 	encodedBytes, err := hex.DecodeString(encodedHex1)
 	assert.NoError(t, err)
 
-	msg := &streamable.Message{}
+	msg := &protocols.Message{}
 
 	err = streamable.Unmarshal(encodedBytes, msg)
 	assert.NoError(t, err)
@@ -108,7 +109,7 @@ func TestUnmarshal_Message2(t *testing.T) {
 	err = streamable.Unmarshal(encodedBytes, nil)
 	assert.Error(t, err)
 
-	msg := &streamable.Message{
+	msg := &protocols.Message{
 		ID:                  nil,
 		ProtocolMessageType: 0,
 		Data:                nil,
@@ -121,7 +122,7 @@ func TestUnmarshal_Message2(t *testing.T) {
 	err = streamable.Unmarshal(encodedBytes, msg)
 
 	assert.NoError(t, err)
-	assert.Equal(t, streamable.ProtocolMessageTypeHandshake, msg.ProtocolMessageType)
+	assert.Equal(t, protocols.ProtocolMessageTypeHandshake, msg.ProtocolMessageType)
 	assert.Equal(t, util.PtrUint16(35256), msg.ID)
 	assert.Equal(t, []byte("This is a sample message to decode"), msg.Data)
 }
@@ -130,8 +131,8 @@ func TestMarshal_Message2(t *testing.T) {
 	encodedBytes, err := hex.DecodeString(encodedHex2)
 	assert.NoError(t, err)
 
-	msg := &streamable.Message{
-		ProtocolMessageType: streamable.ProtocolMessageTypeHandshake,
+	msg := &protocols.Message{
+		ProtocolMessageType: protocols.ProtocolMessageTypeHandshake,
 		ID:                  util.PtrUint16(35256),
 		Data:                []byte("This is a sample message to decode"),
 	}
@@ -147,7 +148,7 @@ func TestUnmarshal_Remarshal_Message2(t *testing.T) {
 	encodedBytes, err := hex.DecodeString(encodedHex2)
 	assert.NoError(t, err)
 
-	msg := &streamable.Message{}
+	msg := &protocols.Message{}
 
 	err = streamable.Unmarshal(encodedBytes, msg)
 	assert.NoError(t, err)
@@ -163,16 +164,16 @@ func TestUnmarshal_Handshake(t *testing.T) {
 	encodedBytes, err := hex.DecodeString(encodedHexHandshake)
 	assert.NoError(t, err)
 
-	msg := &streamable.Message{}
+	msg := &protocols.Message{}
 
 	err = streamable.Unmarshal(encodedBytes, msg)
 
 	assert.NoError(t, err)
-	assert.Equal(t, streamable.ProtocolMessageTypeHandshake, msg.ProtocolMessageType)
+	assert.Equal(t, protocols.ProtocolMessageTypeHandshake, msg.ProtocolMessageType)
 	assert.Nil(t, msg.ID)
 
 	// No decode the handshake portion
-	handshake := &streamable.Handshake{}
+	handshake := &protocols.Handshake{}
 
 	//	Handshake(
 	//      "mainnet",
@@ -189,14 +190,14 @@ func TestUnmarshal_Handshake(t *testing.T) {
 	assert.Equal(t, "0.0.33", handshake.ProtocolVersion)
 	assert.Equal(t, "1.2.11", handshake.SoftwareVersion)
 	assert.Equal(t, uint16(8444), handshake.ServerPort)
-	assert.Equal(t, streamable.NodeTypeFullNode, handshake.NodeType)
-	assert.IsType(t, []streamable.Capability{}, handshake.Capabilities)
+	assert.Equal(t, protocols.NodeTypeFullNode, handshake.NodeType)
+	assert.IsType(t, []protocols.Capability{}, handshake.Capabilities)
 	assert.Len(t, handshake.Capabilities, 1)
 
 	// Test each capability item
 	cap1 := handshake.Capabilities[0]
 
-	assert.Equal(t, streamable.CapabilityTypeBase, cap1.Capability)
+	assert.Equal(t, protocols.CapabilityTypeBase, cap1.Capability)
 	assert.Equal(t, "1", cap1.Value)
 }
 
@@ -205,26 +206,18 @@ func TestUnmarshal_Remarshal_Handshake(t *testing.T) {
 	encodedBytes, err := hex.DecodeString(encodedHexHandshake)
 	assert.NoError(t, err)
 
-	msg := &streamable.Message{}
+	msg := &protocols.Message{}
 
 	err = streamable.Unmarshal(encodedBytes, msg)
 	assert.NoError(t, err)
 
-	handshake := &streamable.Handshake{}
+	handshake := &protocols.Handshake{}
 
 	err = streamable.Unmarshal(msg.Data, handshake)
 	assert.NoError(t, err)
 
 	// Remarshal and check against original bytes
-	reencodedHandshakeBytes, err := streamable.Marshal(handshake)
-	assert.NoError(t, err)
-
-	msgToEncode := &streamable.Message{
-		ProtocolMessageType: msg.ProtocolMessageType,
-		ID:                  msg.ID,
-		Data:                reencodedHandshakeBytes,
-	}
-	reencodedBytes, err := streamable.Marshal(msgToEncode)
+	reencodedBytes, err := protocols.MakeMessageBytes(msg.ProtocolMessageType, handshake)
 	assert.NoError(t, err)
 	assert.Equal(t, encodedBytes, reencodedBytes)
 }
